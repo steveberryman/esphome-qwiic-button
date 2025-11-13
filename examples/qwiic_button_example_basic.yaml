@@ -1,0 +1,58 @@
+# Example 1: Basic Qwiic Button Configuration
+# This example shows the minimal setup needed to use the Qwiic Button
+
+esphome:
+  name: qwiic-button-basic
+  platform: ESP32
+  board: esp32dev
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+ota:
+
+# Configure I2C (adjust pins for your board)
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+
+# Load the external component
+external_components:
+  - source:
+      type: local
+      path: components  # Path to where you put the qwiic_button folder
+    components: [qwiic_button]
+
+# Configure the Qwiic Button
+qwiic_button:
+  - id: my_button
+    address: 0x6F  # Default address
+    debounce_time: 10  # Debounce time in milliseconds
+    pressed:
+      name: "Button Pressed"
+      on_press:
+        then:
+          - logger.log: "Button was pressed!"
+      on_release:
+        then:
+          - logger.log: "Button was released!"
+    clicked:
+      name: "Button Clicked"
+      on_press:
+        then:
+          - logger.log: "Button was clicked!"
+
+# Optional: Add a switch to control the LED
+switch:
+  - platform: qwiic_button
+    qwiic_button_id: my_button
+    name: "Button LED"
+    brightness: 255  # 0-255

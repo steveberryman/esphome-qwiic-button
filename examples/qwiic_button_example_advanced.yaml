@@ -1,0 +1,160 @@
+# Example 2: Advanced Qwiic Button Configuration
+# This example shows more advanced features including:
+# - Multiple buttons on the same I2C bus
+# - Interrupt configuration
+# - LED control with automations
+# - Integration with other ESPHome components
+
+esphome:
+  name: qwiic-button-advanced
+  platform: ESP32
+  board: esp32dev
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+  level: DEBUG
+
+api:
+
+ota:
+
+# Configure I2C
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+  frequency: 100kHz
+
+# Load the external component
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [qwiic_button]
+
+# Configure multiple Qwiic Buttons
+qwiic_button:
+  # First button at default address
+  - id: button_1
+    address: 0x6F
+    debounce_time: 10
+    enable_pressed_interrupt: true
+    enable_clicked_interrupt: true
+    pressed:
+      name: "Button 1 Pressed"
+      id: button_1_pressed
+    clicked:
+      name: "Button 1 Clicked"
+      id: button_1_clicked
+
+  # Second button at custom address (change via solder jumpers)
+  - id: button_2
+    address: 0x6E
+    debounce_time: 15
+    pressed:
+      name: "Button 2 Pressed"
+      id: button_2_pressed
+    clicked:
+      name: "Button 2 Clicked"
+
+# LED switches for both buttons
+switch:
+  - platform: qwiic_button
+    qwiic_button_id: button_1
+    name: "Button 1 LED"
+    id: button_1_led
+    brightness: 255
+
+  - platform: qwiic_button
+    qwiic_button_id: button_2
+    name: "Button 2 LED"
+    id: button_2_led
+    brightness: 128  # Dimmer LED
+
+  # Example: Regular switch controlled by button
+  - platform: gpio
+    pin: GPIO23
+    name: "Relay Output"
+    id: relay_1
+
+# Automation examples
+automation:
+  # Single press: Toggle LED
+  - trigger:
+      platform: binary_sensor
+      id: button_1_clicked
+      on_press:
+    then:
+      - switch.toggle: button_1_led
+
+  # Long press (using pressed): Control relay
+  - trigger:
+      platform: binary_sensor
+      id: button_1_pressed
+      on_press:
+        for:
+          time: 2s
+    then:
+      - switch.toggle: relay_1
+      - logger.log: "Button 1 long press detected!"
+
+  # Double-tap detection (using multiple clicks)
+  - trigger:
+      platform: binary_sensor
+      id: button_1_clicked
+      on_press:
+    then:
+      - if:
+          condition:
+            binary_sensor.is_on: button_1_clicked
+          then:
+            - delay: 500ms
+            - if:
+                condition:
+                  binary_sensor.is_on: button_1_clicked
+                then:
+                  - logger.log: "Double-tap detected!"
+                  # Turn on both LEDs
+                  - switch.turn_on: button_1_led
+                  - switch.turn_on: button_2_led
+
+  # Button 2 controls Button 1's LED brightness
+  - trigger:
+      platform: binary_sensor
+      id: button_2_clicked
+      on_press:
+    then:
+      - lambda: |-
+          // Cycle through brightness levels: 255 -> 128 -> 64 -> 32 -> 0 -> 255
+          static uint8_t brightness = 255;
+          if (brightness == 255) brightness = 128;
+          else if (brightness == 128) brightness = 64;
+          else if (brightness == 64) brightness = 32;
+          else if (brightness == 32) brightness = 0;
+          else brightness = 255;
+          
+          id(button_1).set_led_brightness(brightness);
+          ESP_LOGI("main", "Button 1 LED brightness: %d", brightness);
+
+# Script to make LED pulse
+script:
+  - id: pulse_led
+    parameters:
+      button_id: !lambda 'return id(button_1);'
+    then:
+      - lambda: |-
+          // Set LED to pulse with 1000ms cycle, 500ms off time, 1ms granularity
+          button_id->set_led_pulse(1000, 500, 1);
+      - logger.log: "LED pulsing started"
+      - delay: 5s
+      - lambda: |-
+          button_id->set_led_brightness(255);  // Stop pulsing, set to full brightness
+
+# Status LED to show WiFi connection
+status_led:
+  pin:
+    number: GPIO2
+    inverted: true

@@ -1,0 +1,6 @@
+.esphome/
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+.DS_Store
