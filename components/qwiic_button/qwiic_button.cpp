@@ -91,23 +91,35 @@ void QwiicButton::update_button_state_() {
     ESP_LOGD(TAG, "Button %s", is_pressed ? "pressed" : "released");
   }
   
-  // Update clicked state - check queue directly instead of flag
+  // Update clicked state - check queue directly with rate limiting
   if (this->clicked_binary_sensor_ != nullptr) {
-    uint8_t clicked_queue_status;
-    if (this->read_byte(REG_CLICKED_QUEUE_STATUS, &clicked_queue_status)) {
-      // If there's an item in the clicked queue, we have a new click
-      if (!(clicked_queue_status & QUEUE_IS_EMPTY)) {
-        // Pop the queue item
-        this->pop_clicked_queue();
-        
-        // Fire the clicked event
-        this->clicked_binary_sensor_->publish_state(true);
-        ESP_LOGD(TAG, "Button clicked");
-        
-        // Schedule a reset of the clicked state
-        this->set_timeout(50, [this]() {
-          this->clicked_binary_sensor_->publish_state(false);
-        });
+    uint32_t now = millis();
+    
+    // Rate limit: only process clicks every 100ms minimum
+    if (now - this->last_click_time_ > 100) {
+      uint8_t clicked_queue_status;
+      if (this->read_byte(REG_CLICKED_QUEUE_STATUS, &clicked_queue_status)) {
+        // If there's an item in the clicked queue, we have a new click
+        if (!(clicked_queue_status & QUEUE_IS_EMPTY)) {
+          // Get the timestamp from the queue
+          uint32_t timestamp = this->get_clicked_queue_front();
+          ESP_LOGD(TAG, "Clicked queue item: %u ms", timestamp);
+          
+          // Pop the queue item
+          this->pop_clicked_queue();
+          
+          // Fire the clicked event
+          this->clicked_binary_sensor_->publish_state(true);
+          ESP_LOGD(TAG, "Button clicked");
+          
+          // Remember when we processed this
+          this->last_click_time_ = now;
+          
+          // Schedule a reset of the clicked state
+          this->set_timeout(50, [this]() {
+            this->clicked_binary_sensor_->publish_state(false);
+          });
+        }
       }
     }
   }

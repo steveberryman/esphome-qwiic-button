@@ -87,6 +87,7 @@ class QwiicButton : public Component, public i2c::I2CDevice {
   bool use_interrupt_{false};
   
   bool last_pressed_state_{false};
+  uint32_t last_click_time_{0};  // Track last click to prevent flooding
   
   uint8_t firmware_major_{0};
   uint8_t firmware_minor_{0};
