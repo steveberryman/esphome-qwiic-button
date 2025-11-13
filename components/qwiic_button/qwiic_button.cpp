@@ -53,6 +53,31 @@ void QwiicButton::setup() {
   
   // Initial state read
   this->update_button_state_();
+  
+  // Clear any old events from the queues
+  ESP_LOGI(TAG, "Clearing old events from queues...");
+  uint8_t cleared_count = 0;
+  
+  // Clear pressed queue
+  uint8_t pressed_queue_status;
+  while (this->read_byte(REG_PRESSED_QUEUE_STATUS, &pressed_queue_status) && 
+         !(pressed_queue_status & QUEUE_IS_EMPTY) && 
+         cleared_count < 100) {
+    this->pop_pressed_queue();
+    cleared_count++;
+  }
+  
+  // Clear clicked queue
+  cleared_count = 0;
+  uint8_t clicked_queue_status;
+  while (this->read_byte(REG_CLICKED_QUEUE_STATUS, &clicked_queue_status) && 
+         !(clicked_queue_status & QUEUE_IS_EMPTY) && 
+         cleared_count < 100) {
+    this->pop_clicked_queue();
+    cleared_count++;
+  }
+  
+  ESP_LOGI(TAG, "Queue clearing complete");
 }
 
 void QwiicButton::loop() {
@@ -82,7 +107,11 @@ void QwiicButton::update_button_state_() {
     return;
   }
   
+  ESP_LOGV(TAG, "Status register: 0x%02X", status);
+  
   bool is_pressed = status & STATUS_IS_PRESSED;
+  
+  ESP_LOGV(TAG, "is_pressed=%d, last_pressed=%d", is_pressed, this->last_pressed_state_);
   
   // Update pressed state - simple state tracking
   if (this->pressed_binary_sensor_ != nullptr && is_pressed != this->last_pressed_state_) {
