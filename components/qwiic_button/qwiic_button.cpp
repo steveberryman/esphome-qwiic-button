@@ -57,7 +57,6 @@ void QwiicButton::setup() {
 
 void QwiicButton::loop() {
   this->update_button_state_();
-  this->process_queues_();
 }
 
 void QwiicButton::dump_config() {
@@ -87,21 +86,46 @@ void QwiicButton::update_button_state_() {
   bool has_clicked = status & STATUS_HAS_BEEN_CLICKED;
   
   // Update pressed state
-  if (this->pressed_binary_sensor_ != nullptr && is_pressed != this->last_pressed_state_) {
-    this->pressed_binary_sensor_->publish_state(is_pressed);
-    this->last_pressed_state_ = is_pressed;
-    ESP_LOGD(TAG, "Button %s", is_pressed ? "pressed" : "released");
+  if (this->pressed_binary_sensor_ != nullptr) {
+    if (is_pressed != this->last_pressed_state_) {
+      this->pressed_binary_sensor_->publish_state(is_pressed);
+      this->last_pressed_state_ = is_pressed;
+      ESP_LOGD(TAG, "Button %s", is_pressed ? "pressed" : "released");
+      
+      // Pop the pressed queue when button is pressed to clear the event flag
+      if (is_pressed) {
+        // Check if there's an item in the queue and pop it
+        uint8_t pressed_queue_status;
+        if (this->read_byte(REG_PRESSED_QUEUE_STATUS, &pressed_queue_status)) {
+          if (!(pressed_queue_status & QUEUE_IS_EMPTY)) {
+            this->pop_pressed_queue();
+          }
+        }
+      }
+    }
   }
   
-  // Update clicked state (pulse high briefly)
-  if (this->clicked_binary_sensor_ != nullptr && has_clicked) {
+  // Update clicked state - only fire on transition from false to true
+  if (this->clicked_binary_sensor_ != nullptr && has_clicked && !this->last_clicked_state_) {
     this->clicked_binary_sensor_->publish_state(true);
     ESP_LOGD(TAG, "Button clicked");
+    
+    // Pop the clicked queue to clear the has_clicked flag
+    uint8_t clicked_queue_status;
+    if (this->read_byte(REG_CLICKED_QUEUE_STATUS, &clicked_queue_status)) {
+      if (!(clicked_queue_status & QUEUE_IS_EMPTY)) {
+        this->pop_clicked_queue();
+      }
+    }
+    
     // Schedule a reset of the clicked state
     this->set_timeout(50, [this]() {
       this->clicked_binary_sensor_->publish_state(false);
     });
   }
+  
+  // Track clicked state
+  this->last_clicked_state_ = has_clicked;
 }
 
 void QwiicButton::process_queues_() {
