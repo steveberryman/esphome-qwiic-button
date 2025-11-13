@@ -83,69 +83,32 @@ void QwiicButton::update_button_state_() {
   }
   
   bool is_pressed = status & STATUS_IS_PRESSED;
-  bool has_clicked = status & STATUS_HAS_BEEN_CLICKED;
   
-  // Update pressed state
-  if (this->pressed_binary_sensor_ != nullptr) {
-    if (is_pressed != this->last_pressed_state_) {
-      this->pressed_binary_sensor_->publish_state(is_pressed);
-      this->last_pressed_state_ = is_pressed;
-      ESP_LOGD(TAG, "Button %s", is_pressed ? "pressed" : "released");
-      
-      // Pop the pressed queue when button is pressed to clear the event flag
-      if (is_pressed) {
-        // Check if there's an item in the queue and pop it
-        uint8_t pressed_queue_status;
-        if (this->read_byte(REG_PRESSED_QUEUE_STATUS, &pressed_queue_status)) {
-          if (!(pressed_queue_status & QUEUE_IS_EMPTY)) {
-            this->pop_pressed_queue();
-          }
-        }
-      }
-    }
+  // Update pressed state - simple state tracking
+  if (this->pressed_binary_sensor_ != nullptr && is_pressed != this->last_pressed_state_) {
+    this->pressed_binary_sensor_->publish_state(is_pressed);
+    this->last_pressed_state_ = is_pressed;
+    ESP_LOGD(TAG, "Button %s", is_pressed ? "pressed" : "released");
   }
   
-  // Update clicked state - only fire on transition from false to true
-  if (this->clicked_binary_sensor_ != nullptr && has_clicked && !this->last_clicked_state_) {
-    this->clicked_binary_sensor_->publish_state(true);
-    ESP_LOGD(TAG, "Button clicked");
-    
-    // Pop the clicked queue to clear the has_clicked flag
+  // Update clicked state - check queue directly instead of flag
+  if (this->clicked_binary_sensor_ != nullptr) {
     uint8_t clicked_queue_status;
     if (this->read_byte(REG_CLICKED_QUEUE_STATUS, &clicked_queue_status)) {
+      // If there's an item in the clicked queue, we have a new click
       if (!(clicked_queue_status & QUEUE_IS_EMPTY)) {
+        // Pop the queue item
         this->pop_clicked_queue();
+        
+        // Fire the clicked event
+        this->clicked_binary_sensor_->publish_state(true);
+        ESP_LOGD(TAG, "Button clicked");
+        
+        // Schedule a reset of the clicked state
+        this->set_timeout(50, [this]() {
+          this->clicked_binary_sensor_->publish_state(false);
+        });
       }
-    }
-    
-    // Schedule a reset of the clicked state
-    this->set_timeout(50, [this]() {
-      this->clicked_binary_sensor_->publish_state(false);
-    });
-  }
-  
-  // Track clicked state
-  this->last_clicked_state_ = has_clicked;
-}
-
-void QwiicButton::process_queues_() {
-  // Check if there are items in the pressed queue
-  uint8_t pressed_queue_status;
-  if (this->read_byte(REG_PRESSED_QUEUE_STATUS, &pressed_queue_status)) {
-    if (!(pressed_queue_status & QUEUE_IS_EMPTY)) {
-      uint32_t timestamp = this->get_pressed_queue_front();
-      ESP_LOGV(TAG, "Pressed queue item: %u ms", timestamp);
-      this->pop_pressed_queue();
-    }
-  }
-  
-  // Check if there are items in the clicked queue
-  uint8_t clicked_queue_status;
-  if (this->read_byte(REG_CLICKED_QUEUE_STATUS, &clicked_queue_status)) {
-    if (!(clicked_queue_status & QUEUE_IS_EMPTY)) {
-      uint32_t timestamp = this->get_clicked_queue_front();
-      ESP_LOGV(TAG, "Clicked queue item: %u ms", timestamp);
-      this->pop_clicked_queue();
     }
   }
 }

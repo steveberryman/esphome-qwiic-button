@@ -87,13 +87,11 @@ class QwiicButton : public Component, public i2c::I2CDevice {
   bool use_interrupt_{false};
   
   bool last_pressed_state_{false};
-  bool last_clicked_state_{false};
   
   uint8_t firmware_major_{0};
   uint8_t firmware_minor_{0};
   
   void update_button_state_();
-  void process_queues_();
 };
 
 }  // namespace qwiic_button
